@@ -39,6 +39,9 @@ import shutil
 import tempfile
 from shutil import copyfile
 
+#global variable to store organization ids
+ORGANIZATION_IDS = []
+
 host = "http://localhost:8000/"
 
 class SaveLayerInGeoDASH:
@@ -233,6 +236,10 @@ class SaveLayerInGeoDASH:
 
         #clear selectLayer combobox
         self.dlg.selectLayer.clear()
+        self.dlg.selectHost.clear()
+        self.dlg.layerTitle.clear()
+        self.dlg.username.clear()
+        self.dlg.password.clear()
 
         self.dlg.password.setEchoMode(QLineEdit.Password)
 
@@ -245,6 +252,21 @@ class SaveLayerInGeoDASH:
         #add layer list to selectLayer combobox
         self.dlg.selectLayer.addItems(layer_list)
 
+        #list all hosts given in the hosts.txt file in qgis
+        hostsFilePath = os.path.abspath(os.path.join(
+            os.path.dirname(__file__),
+            'hosts.txt'))
+        hostsFile = open(hostsFilePath, 'r')
+        hosts = []
+        for line in hostsFile.readlines():
+            hosts.append(line.rstrip())
+        self.dlg.selectHost.addItems(hosts)
+
+        #organizations and categories are set
+        #by selecting host from here
+        self.dlg.selectHost.currentIndexChanged.connect(self.setOrganizationsAndCategories)
+
+        host = self.dlg.selectHost.currentText().rstrip()
         #get available categories from geodash server
         response = requests.get(host + "api/categories/")
         categories = []
@@ -253,6 +275,7 @@ class SaveLayerInGeoDASH:
         self.dlg.selectCategory.clear()
         for cat in response.json()['objects']:
             categories.append(cat['gn_description'])
+
 
         #add categories to selectCategory combobox
         self.dlg.selectCategory.addItems(categories)
@@ -266,14 +289,44 @@ class SaveLayerInGeoDASH:
         self.dlg.selectOrganization.clear()
         for org in response.json()['objects']:
             organizations.append(org['title'])
+            ORGANIZATION_IDS.append(org['id'])
 
         #add organizations to selectOrganization combobox
         self.dlg.selectOrganization.addItems(organizations)
 
         # add placeholder for host and layer title field
-        self.dlg.host.setPlaceholderText("https://geodash.gov.bd/")  # setPlaceholderText("Don't mind me.")
+        # self.dlg.host.setPlaceholderText("https://geodash.gov.bd/")  # setPlaceholderText("Don't mind me.")
         self.dlg.layerTitle.setPlaceholderText("Give a title to your layer")  # setPlaceholderText("Don't mind me.")
 
+
+    def setOrganizationsAndCategories(self):
+        host = self.dlg.selectHost.currentText()
+        if host:
+            # get available categories from geodash server
+            response = requests.get(host + "api/categories/")
+            categories = []
+            # clear select category combobox
+            self.dlg.selectCategory.clear()
+            for cat in response.json()['objects']:
+                categories.append(cat['gn_description'])
+
+            # add categories to selectCategory combobox
+            self.dlg.selectCategory.addItems(categories)
+
+            # get available organizations from geodash
+
+            response = requests.get(host + "api/groups/")
+            organizations = []
+
+
+            # clear selectOrganization combobox before initialization
+            self.dlg.selectOrganization.clear()
+            for org in response.json()['objects']:
+                organizations.append(org['title'])
+                ORGANIZATION_IDS.append(org['id'])
+
+            # add organizations to selectOrganization combobox
+            self.dlg.selectOrganization.addItems(organizations)
 
 
     def uploadLayer(self):
@@ -285,7 +338,7 @@ class SaveLayerInGeoDASH:
         :return:
         """
 
-        host = self.dlg.host.text()
+        host  = self.dlg.selectHost.currentText()
 
         #loaded layer list in qgis
         layers = self.iface.legendInterface().layers()
@@ -370,7 +423,7 @@ class SaveLayerInGeoDASH:
                 data["password"] = self.dlg.password.text()
                 data["layer_title"] = self.dlg.layerTitle.text()
                 data["category"] = self.dlg.selectCategory.currentText()
-                data["organization"] = 1  # self.dlg.selectOrganization.text()
+                data["organization"] = ORGANIZATION_IDS[self.dlg.selectOrganization.currentIndex()] # self.dlg.selectOrganization.text()
                 data["charset"] = "UTF-8"
 
                 permission_json = {}
@@ -403,8 +456,6 @@ class SaveLayerInGeoDASH:
             return "username field is required"
         if not self.dlg.password.text():
             return "password field is required"
-        if not self.dlg.host.text():
-            return "host url field is required"
         if not self.dlg.layerTitle.text():
             return "layer title field is required"
 
